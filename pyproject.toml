@@ -7,10 +7,23 @@ requires-python = ">=3.12"
 dependencies = [
     "matplotlib>=3.11.2",
     "numpy>=2.5.5",
+    "openpyxl>=3.1.5",
     "pandas>=3.1.1",
     "polar>=0.0.127",
     "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
     "seaborn>=0.13.2",
     "streamlit>=1.67.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.22,<0.10"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "demand_platform"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
 ]
