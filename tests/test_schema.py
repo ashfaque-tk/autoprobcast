@@ -1,9 +1,11 @@
 import pandas as pd
+import pytest
 
 from demand_platform.data.schema import (
     _infer_frequency,
     _match_role,
     _parse_dates,
+    confirm_mapping,
     interpret_schema,
 )
 
@@ -121,3 +123,47 @@ def test_unknown_layout():
     assert p.date_columns == []
     assert p.target_column is None
     assert p.frequency is None
+
+
+def test_confirm_mapping_wide_defaults():
+    proposal = interpret_schema(wide(["Store", "Product", "Extra", *WEEKS]))
+    confirmed = confirm_mapping(proposal, "Store", "Product")
+    assert confirmed.id_columns == {"store_id": "Store", "product_id": "Product"}
+    assert confirmed.date_columns == WEEKS
+    assert confirmed.unmapped_columns == ["Extra"]
+
+
+def test_confirm_mapping_overrides_and_recomputes_unmapped():
+    proposal = interpret_schema(wide(["Shop", "Product", *WEEKS]))
+    confirmed = confirm_mapping(proposal, "Shop", "Product")
+    assert confirmed.id_columns == {"store_id": "Shop", "product_id": "Product"}
+    assert confirmed.unmapped_columns == []
+
+
+def test_confirm_mapping_long_requires_target():
+    proposal = interpret_schema(long_frame(Units=["1"] * 6))
+    assert confirm_mapping(proposal, "Store", "Product", "Units").target_column == "Units"
+    with pytest.raises(ValueError):
+        confirm_mapping(proposal, "Store", "Product", None)
+
+
+def test_confirm_mapping_wide_rejects_target():
+    proposal = interpret_schema(wide(["Store", "Product", "Extra", *WEEKS]))
+    with pytest.raises(ValueError):
+        confirm_mapping(proposal, "Store", "Product", "Extra")
+
+
+@pytest.mark.parametrize(
+    "store, product",
+    [("Store", "Store"), (None, "Product"), ("Store", None), ("Store", WEEKS[0]), ("Store", "Missing")],
+)
+def test_confirm_mapping_rejects_invalid_roles(store, product):
+    proposal = interpret_schema(wide(["Store", "Product", *WEEKS]))
+    with pytest.raises(ValueError):
+        confirm_mapping(proposal, store, product)
+
+
+def test_confirm_mapping_rejects_unknown_layout():
+    proposal = interpret_schema(wide(["Store", "Product"]))
+    with pytest.raises(ValueError):
+        confirm_mapping(proposal, "Store", "Product")

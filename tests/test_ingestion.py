@@ -51,6 +51,22 @@ def test_rejects_corrupt_xlsx():
         load_dataset(io.BytesIO(b"not an excel file"), "broken.xlsx")
 
 
+def test_missing_cells_are_nan():
+    df = load_dataset(csv_bytes("store,sales\n1,\n"), "sales.csv")
+    assert pd.isna(df.loc[0, "sales"])
+
+
+def test_xlsx_reads_first_sheet_only():
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf) as writer:
+        pd.DataFrame({"store": ["1"]}).to_excel(writer, sheet_name="first", index=False)
+        pd.DataFrame({"other": ["x", "y"]}).to_excel(writer, sheet_name="second", index=False)
+    buf.seek(0)
+    df = load_dataset(buf, "multi.xlsx")
+    assert list(df.columns) == ["store"]
+    assert len(df) == 1
+
+
 def test_preserves_raw_values():
     df = load_dataset(csv_bytes("store,sales\n001,5\n"), "sales.csv")
     assert df.loc[0, "store"] == "001"
