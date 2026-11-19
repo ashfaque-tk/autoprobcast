@@ -2,6 +2,7 @@ import streamlit as st
 
 from demand_platform.data.ingestion import IngestionError, SUPPORTED_EXTENSIONS, load_dataset
 from demand_platform.data.schema import confirm_mapping, interpret_schema
+from demand_platform.data.standardization import standardize
 
 st.title("Demand Forecasting Platform")
 
@@ -15,6 +16,7 @@ if uploaded is None:
 if st.session_state.get("file_id") != uploaded.file_id:
     st.session_state["file_id"] = uploaded.file_id
     st.session_state.pop("confirmed_schema", None)
+    st.session_state.pop("standardized", None)
 
 try:
     df = load_dataset(uploaded, uploaded.name)
@@ -52,9 +54,16 @@ target_col = pick("Sales column", proposal.target_column) if proposal.layout == 
 if st.button("Confirm mapping"):
     try:
         st.session_state["confirmed_schema"] = confirm_mapping(proposal, store_col, product_col, target_col)
+        st.session_state["standardized"] = standardize(df, st.session_state["confirmed_schema"])
     except ValueError as exc:
         st.error(str(exc))
 
 if "confirmed_schema" in st.session_state:
     st.success("Mapping confirmed.")
     st.write(st.session_state["confirmed_schema"])
+
+if "standardized" in st.session_state:
+    st.header("Standardised data")
+    standardized = st.session_state["standardized"]
+    st.write(f"{standardized.shape[0]:,} rows × {standardized.shape[1]:,} columns")
+    st.dataframe(standardized.head(100))
