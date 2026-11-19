@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pandas as pd
 from pandas.tseries.offsets import BaseOffset
@@ -17,7 +17,7 @@ TARGET_SYNONYMS = {"sales", "quantity", "qty", "demand", "units"}
 
 MIN_DATES_FOR_FREQUENCY = 3
 
-pd.set_option('future.infer_freq_returns_offset', True)
+
 @dataclass(frozen=True)
 class SchemaProposal:
     layout: str
@@ -48,7 +48,9 @@ def _infer_frequency(dates: pd.DatetimeIndex) -> str | None:
     if len(dates_unique) < MIN_DATES_FOR_FREQUENCY:
         return None 
     try:
-        frequency = pd.infer_freq(dates_unique)
+        # Scoped so the module doesn't change pandas behaviour process-wide.
+        with pd.option_context("future.infer_freq_returns_offset", True):
+            frequency = pd.infer_freq(dates_unique)
         if frequency is None:
             return None
         if isinstance(frequency, BaseOffset):
@@ -139,3 +141,41 @@ def interpret_schema(df: pd.DataFrame) -> SchemaProposal:
         frequency=frequency,
     )
  
+
+def confirm_mapping(
+    proposal: SchemaProposal,
+    store_col: str | None,
+    product_col: str | None,
+    target_col: str | None = None,
+) -> SchemaProposal:
+    if proposal.layout == "unknown":
+        raise ValueError("Cannot confirm a mapping for an unknown layout.")
+    if store_col is None or product_col is None:
+        raise ValueError("Both store and product columns are required.")
+    if proposal.layout == "long" and target_col is None:
+        raise ValueError("A sales column is required for long layout.")
+    if proposal.layout == "wide" and target_col is not None:
+        raise ValueError("Wide layout takes sales from the date columns; no sales column allowed.")
+
+    chosen = [c for c in (store_col, product_col, target_col) if c is not None]
+    if len(set(chosen)) != len(chosen):
+        raise ValueError("Each column can be mapped to only one role.")
+
+    # The proposal partitions every dataset column, so it is the full column list.
+    all_columns = list(dict.fromkeys([
+        *proposal.id_columns.values(),
+        *([proposal.target_column] if proposal.target_column is not None else []),
+        *proposal.unmapped_columns,
+    ]))
+    for col in chosen:
+        if col in proposal.date_columns:
+            raise ValueError(f"Column {col!r} is a date column.")
+        if col not in all_columns:
+            raise ValueError(f"Column {col!r} is not in the dataset.")
+
+    return replace(
+        proposal,
+        id_columns={"store_id": store_col, "product_id": product_col},
+        target_column=target_col,
+        unmapped_columns=[c for c in all_columns if c not in chosen],
+    )
