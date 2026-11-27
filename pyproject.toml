@@ -5,11 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "lightgbm>=4.7.0",
     "matplotlib>=3.11.2",
+    "mlforecast>=1.0.2",
     "numpy>=2.5.5",
     "openpyxl>=3.1.5",
     "pandas>=3.1.1",
-    "polar>=0.0.127",
     "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
     "seaborn>=0.13.2",
@@ -25,5 +26,6 @@ module-name = "demand_platform"
 
 [dependency-groups]
 dev = [
+    "ipykernel>=7.4.0",
     "pytest>=9.2.0",
 ]

@@ -9,6 +9,7 @@ from demand_platform.data.ingestion import IngestionError, SUPPORTED_EXTENSIONS,
 from demand_platform.data.schema import confirm_mapping, interpret_schema
 from demand_platform.data.standardization import standardize
 from demand_platform.data.validation import validate
+from demand_platform.frequency import get_profile
 
 
 @st.cache_data(show_spinner="Reading file…")
@@ -30,25 +31,18 @@ def analyse(content: bytes, name: str, store: str | None, product: str | None, t
     return schema, data, report, eda, assess_capability(profile, report)
 
 
-# Base frequency code -> (name, unit, season). Display only; the analytics use SEASONAL_PERIODS.
-FREQUENCIES = {"W": ("Weekly", "weeks", "year"), "D": ("Daily", "days", "week"),
-               "M": ("Monthly", "months", "year"), "ME": ("Monthly", "months", "year"),
-               "MS": ("Monthly", "months", "year")}
 WEEKDAYS = {"MON": "Monday", "TUE": "Tuesday", "WED": "Wednesday", "THU": "Thursday",
             "FRI": "Friday", "SAT": "Saturday", "SUN": "Sunday"}
 
 
 def describe_frequency(frequency: str | None) -> tuple[str, str, str | None]:
     """Plain-language (name, unit, season) for a pandas alias, e.g. "W-MON" -> ("Weekly data (dates on Mondays)", "weeks", "year")."""
-    if frequency is None:
-        return "Unknown frequency", "periods", None
-    base, _, anchor = frequency.partition("-")
-    name, unit, season = FREQUENCIES.get(base, (f"Frequency {frequency}", "periods", None))
-    if anchor in WEEKDAYS:
-        name += f" data (dates on {WEEKDAYS[anchor]}s)"
-    elif base in FREQUENCIES:
-        name += " data"
-    return name, unit, season
+    profile = get_profile(frequency)
+    if profile is None:
+        return (f"Frequency {frequency}" if frequency else "Unknown frequency"), "periods", None
+    anchor = frequency.partition("-")[2]
+    name = f"{profile.name} data" + (f" (dates on {WEEKDAYS[anchor]}s)" if anchor in WEEKDAYS else "")
+    return name, profile.unit, profile.primary_season
 
 
 st.set_page_config(page_title="Demand Forecasting Platform", layout="wide")

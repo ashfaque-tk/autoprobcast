@@ -1,15 +1,12 @@
 import numpy as np
 import pandas as pd
 
+from demand_platform.frequency import get_profile
+
 SERIES_COLUMNS = ["store_id", "product_id"]
 
 SPIKE_STD = 3.0
 MIN_SEASONAL_CYCLES = 2
-# shortcut: one window in periods (a quarter for weekly data), make it frequency-aware when daily data arrives.
-TREND_WINDOW = 13
-
-# Base frequency code -> seasonal period in rows. Anything else is "unsupported", never guessed.
-SEASONAL_PERIODS = {"W": 52, "D": 7, "M": 12, "ME": 12, "MS": 12}
 
 PROFILE_COLUMNS = [
     "store_id",
@@ -38,11 +35,10 @@ PROFILE_COLUMNS = [
 def _seasonal_period(frequency: str | None) -> int | None:
     """Seasonal period in rows for a pandas frequency alias, e.g. "W-MON" -> 52.
 
-    Returns None for None or any frequency not in ``SEASONAL_PERIODS``.
+    Returns None for None or any frequency without a ``FrequencyProfile``.
     """
-    if frequency is None:
-        return None
-    return SEASONAL_PERIODS.get(frequency.split("-")[0])
+    profile = get_profile(frequency)
+    return profile.season_length if profile else None
 
 
 
@@ -69,18 +65,20 @@ def series_profile(df: pd.DataFrame, frequency: str | None) -> pd.DataFrame:
           last spike to the end (NaN if none).
         - acf_1: autocorrelation at lag 1. seasonal_acf: at lag = seasonal period, only where
           n_periods >= MIN_SEASONAL_CYCLES * period; otherwise NaN.
-        - trend_ratio: mean of the last TREND_WINDOW rows / mean of the TREND_WINDOW before;
-          NaN if fewer than 2 * TREND_WINDOW rows or the earlier mean is 0.
+        - trend_ratio: mean of the last ``trend_window`` rows / mean of the ``trend_window``
+          before (``FrequencyProfile.trend_window``, a quarter); NaN if fewer than
+          2 * trend_window rows, the earlier mean is 0, or the frequency is unsupported.
 
     Edge cases:
         - Never-sold series: effective_start NaT, n_periods 0, total 0, statistics NaN,
           run/spike counts 0.
-        - Unsupported or None frequency: seasonal_acf is NaN for every series.
+        - Unsupported or None frequency: seasonal_acf and trend_ratio are NaN for every series.
         - Empty df: empty frame with ``PROFILE_COLUMNS``.
         - Undefined statistics (std 0, too few rows) are NaN, never 0.
         - ``df`` is never mutated and may arrive unsorted.
     """
     period = _seasonal_period(frequency)
+    profile = get_profile(frequency)
     if df.empty:
         return pd.DataFrame(columns=PROFILE_COLUMNS)
 
@@ -129,8 +127,10 @@ def series_profile(df: pd.DataFrame, frequency: str | None) -> pd.DataFrame:
         "seasonal_acf": (
             _acf(sales, sid, period).where(n_periods >= MIN_SEASONAL_CYCLES * period) if period else np.nan
         ),
-        "trend_ratio": _trend_ratio(sales, sid, data.groupby(sid).cumcount(ascending=False), TREND_WINDOW)
-        .where(n_periods >= 2 * TREND_WINDOW),
+        "trend_ratio": (
+            _trend_ratio(sales, sid, data.groupby(sid).cumcount(ascending=False), profile.trend_window)
+            .where(n_periods >= 2 * profile.trend_window) if profile else np.nan
+        ),
     })
     out["dispersion"] = out["std"] ** 2 / out["mean"].where(out["mean"] != 0)
 
@@ -203,7 +203,7 @@ def seasonal_profile(df: pd.DataFrame, frequency: str | None) -> pd.DataFrame:
     """
     columns = ["position", "mean_index", "n_obs"]
     base = frequency.split("-")[0] if frequency else None
-    if base not in SEASONAL_PERIODS or df.empty:
+    if get_profile(frequency) is None or df.empty:
         return pd.DataFrame(columns=columns)
 
     sid = df.groupby(SERIES_COLUMNS, sort=False).ngroup()
